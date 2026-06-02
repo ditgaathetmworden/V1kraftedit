@@ -1,9 +1,10 @@
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 import { useEditorStore } from '@/stores/editor-store'
 import { SkinFormat } from '@/types/skin'
 import { createBlankSkin, downloadSkin, imageDataToDataUrl, loadSkinFromFile } from '@/lib/skin-utils'
 import { extractPalette } from '@/lib/brush-algorithms'
 import { useToast } from '@/hooks/use-toast'
+import { dbSaveSkin, dbUpsertUserProfile } from '@/lib/supabase'
 
 export function useEditorActions(
   setIsSaving: (isSaving: boolean) => void,
@@ -27,71 +28,61 @@ export function useEditorActions(
   const handleSave = async (name: string, description: string, isPublic: boolean) => {
     setIsSaving(true)
     
-    // Simulate saving to profile (in real app, this would be an API call to Firestore)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Store in localStorage for now (mock)
-    const savedSkins = JSON.parse(localStorage.getItem('savedSkins') || '[]')
-    const savedSkinObj = {
-      id: `skin-${Date.now()}`,
-      name,
-      description: description,
-      format: skinFormat,
-      textureData: skinUrl,
-      imageUrl: skinUrl,
-      isPublished: isPublic,
-      published: isPublic,
-      authorId: userProfile?.id || 'user-1',
-      authorName: userProfile?.displayName || userProfile?.username || 'AETHER_BLADE',
-      authorAvatar: userProfile?.avatarUrl || '/avatars/aether.jpg',
-      likes: 0,
-      downloads: 0,
-      createdAt: new Date().toISOString(),
-    }
-    savedSkins.push(savedSkinObj)
-    localStorage.setItem('savedSkins', JSON.stringify(savedSkins))
-    
-    // Increment skinsCreated in local profiles
-    if (userProfile) {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      if (storedProfiles) {
-        try {
-          const list = JSON.parse(storedProfiles)
-          const updatedList = list.map((p: any) => {
-            if (p.id === userProfile.id) {
-              return {
-                ...p,
-                skinsCreated: (p.skinsCreated || 0) + 1
-              }
-            }
-            return p
-          })
-          localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
-          await refreshUserProfile()
-        } catch (e) {
-          console.error('Failed to update skinsCreated counter', e)
+    try {
+      // Use clean Supabase database service which manages actual calls & fallbacks
+      await dbSaveSkin({
+        id: `skin-${Date.now()}`,
+        name,
+        description,
+        format: skinFormat,
+        imageUrl: skinUrl || '',
+        isPublished: isPublic,
+        authorId: userProfile?.id || 'user-1',
+        authorName: userProfile?.displayName || userProfile?.username || 'AETHER_BLADE',
+        authorAvatar: userProfile?.avatarUrl || '/avatars/aether.jpg',
+        likes: 0,
+        downloads: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      
+      // Increment skinsCreated count in database
+      if (userProfile) {
+        const updatedProfile = {
+          ...userProfile,
+          skinsCreated: (userProfile.skinsCreated || 0) + 1,
         }
+        await dbUpsertUserProfile(updatedProfile)
+        await refreshUserProfile()
       }
-    }
-    
-    setIsSaving(false)
-    setShowSaveModal(false)
-    
-    // Clear draft in localStorage on successful save
-    localStorage.removeItem('kraftedit_autosaved_skin')
-    
-    toast({
-      title: isPublic ? 'Skin published' : 'Skin saved',
-      description: isPublic 
-        ? `Your skin "${name}" has been published to the gallery.` 
-        : `Your skin "${name}" has been saved privately.`,
-    })
+      
+      setIsSaving(false)
+      setShowSaveModal(false)
+      
+      // Clear draft in localStorage on successful save
+      localStorage.removeItem('kraftedit_autosaved_skin')
+      
+      toast({
+        title: isPublic ? 'Skin published' : 'Skin saved',
+        description: isPublic 
+          ? `Your skin "${name}" has been published to the gallery.` 
+          : `Your skin "${name}" has been saved privately.`,
+      })
 
-    // Navigate to gallery if published, or profile if saved privately
-    if (isPublic) {
-      router.push('/gallery')
-    } else {
-      router.push('/profile')
+      // Navigate to gallery if published, or profile if saved privately
+      if (isPublic) {
+        router.push('/gallery')
+      } else {
+        router.push('/profile')
+      }
+    } catch (e) {
+      console.error('Failed to save skin:', e)
+      toast({
+        variant: 'destructive',
+        title: 'Opslaan mislukt',
+        description: 'De skin kon niet worden opgeslagen in de database.',
+      })
+      setIsSaving(false)
     }
   }
 

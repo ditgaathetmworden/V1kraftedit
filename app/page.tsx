@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight } from 'lucide-react'
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { PromptInput } from '@/components/ai/prompt-input'
 import { SkinViewer3D } from '@/components/editor/skin-viewer-3d'
