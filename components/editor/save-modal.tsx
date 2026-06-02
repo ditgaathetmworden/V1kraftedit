@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { X, Globe, Lock, Heart, Download, MessageCircle, ChevronLeft } from 'lucide-react'
 import { SkinViewer3D } from '@/components/editor/skin-viewer-3d'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 
 interface SaveModalProps {
   isOpen: boolean
@@ -18,6 +19,7 @@ export function SaveModal({ isOpen, onClose, onSave, skinUrl, isSaving }: SaveMo
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [isPublic, setIsPublic] = useState(true)
+  const { userProfile } = useAuth()
 
   if (!isOpen) return null
 
@@ -153,7 +155,7 @@ export function SaveModal({ isOpen, onClose, onSave, skinUrl, isSaving }: SaveMo
                 {/* Info */}
                 <div className="px-4 pt-4 pb-3">
                   <h3 className="text-base font-bold text-foreground leading-tight">{name}</h3>
-                  <p className="mt-0.5 text-sm text-muted-foreground">@YourUsername</p>
+                  <p className="mt-0.5 text-sm font-medium text-neon">@{userProfile?.username || userProfile?.displayName || 'YourUsername'}</p>
                   {description && (
                     <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{description}</p>
                   )}
