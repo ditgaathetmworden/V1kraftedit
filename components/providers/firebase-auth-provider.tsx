@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { UserProfile } from '@/types/skin'
 import { mockUsers } from '@/lib/mock-data'
+import { useToast } from '@/hooks/use-toast'
 
 export interface MockUser {
   uid: string
@@ -47,6 +48,7 @@ export function FirebaseAuthProvider({ children }: { children: React.ReactNode }
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [isInitialized, setIsInitialized] = useState<boolean>(false)
+  const { toast } = useToast()
 
   // Initialize DB in localStorage
   useEffect(() => {
@@ -306,8 +308,18 @@ export function FirebaseAuthProvider({ children }: { children: React.ReactNode }
       }
       setUser(updatedUserRef)
       localStorage.setItem('kraftedit_current_user', JSON.stringify(updatedUserRef))
+      
+      toast({
+        title: 'Profile updated',
+        description: 'Your changes have been saved successfully.',
+      })
     } catch (e) {
       console.error(e)
+      toast({
+        variant: 'destructive',
+        title: 'Update failed',
+        description: 'Could not save your profile changes.',
+      })
     } finally {
       setLoading(false)
     }

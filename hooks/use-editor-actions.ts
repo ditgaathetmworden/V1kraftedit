@@ -3,6 +3,7 @@ import { useEditorStore } from '@/stores/editor-store'
 import { SkinFormat } from '@/types/skin'
 import { createBlankSkin, downloadSkin, imageDataToDataUrl, loadSkinFromFile } from '@/lib/skin-utils'
 import { extractPalette } from '@/lib/brush-algorithms'
+import { useToast } from '@/hooks/use-toast'
 
 export function useEditorActions(
   setIsSaving: (isSaving: boolean) => void,
@@ -11,6 +12,7 @@ export function useEditorActions(
   router: any
 ) {
   const { userProfile, refreshUserProfile } = useAuth()
+  const { toast } = useToast()
   const {
     skinImageData,
     skinFormat,
@@ -78,6 +80,13 @@ export function useEditorActions(
     // Clear draft in localStorage on successful save
     localStorage.removeItem('kraftedit_autosaved_skin')
     
+    toast({
+      title: isPublic ? 'Skin published' : 'Skin saved',
+      description: isPublic 
+        ? `Your skin "${name}" has been published to the gallery.` 
+        : `Your skin "${name}" has been saved privately.`,
+    })
+
     // Navigate to gallery if published, or profile if saved privately
     if (isPublic) {
       router.push('/gallery')
@@ -102,6 +111,7 @@ export function useEditorActions(
     try {
       setIsLoading(true)
       const imageData = await loadSkinFromFile(file, skinFormat)
+      // Check format to switch format state to whatever we uploaded
       const format = imageData.width >= 128 ? '128x128' : '64x64'
       
       setSkinImageData(imageData)
@@ -112,8 +122,18 @@ export function useEditorActions(
       if (extractedPalette.length > 0) {
         setPalette(extractedPalette)
       }
+
+      toast({
+        title: 'Skin imported successfully',
+        description: `${file.name} is ready for editing.`,
+      })
     } catch (error) {
       console.error('Failed to load file:', error)
+      toast({
+        variant: 'destructive',
+        title: 'Import failed',
+        description: 'Selected file could not be parsed as a skin texture.',
+      })
     } finally {
       setIsLoading(false)
     }
@@ -122,6 +142,10 @@ export function useEditorActions(
   const handleDownload = () => {
     if (skinImageData) {
       downloadSkin(skinImageData, `ainecraft-skin-${Date.now()}.png`)
+      toast({
+        title: 'Download started',
+        description: 'Skin file is downloading to your device.',
+      })
     }
   }
 
