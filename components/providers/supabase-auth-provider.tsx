@@ -2,17 +2,18 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { UserProfile } from '@/types/skin'
-import { getSupabase, dbGetUserProfile, dbUpsertUserProfile } from '@/lib/supabase'
+import { mockUsers } from '@/lib/mock-data'
 import { useToast } from '@/hooks/use-toast'
+import { getSupabase } from '@/lib/supabase'
 
-export interface SupabaseUser {
+export interface MockUser {
   uid: string
   email: string
   displayName: string
 }
 
 interface AuthContextType {
-  user: SupabaseUser | null
+  user: MockUser | null
   userProfile: UserProfile | null
   loading: boolean
   isInitialized: boolean
@@ -44,56 +45,121 @@ const AuthContext = createContext<AuthContextType>({
 export const useAuth = () => useContext(AuthContext)
 
 export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [user, setUser] = useState<MockUser | null>(null)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [isInitialized, setIsInitialized] = useState<boolean>(false)
   const { toast } = useToast()
 
-  const supabase = getSupabase()
-
-  // Bootstrap functions for LocalStorage Fallback (Only used if Supabase is offline/missing)
-  const getLocalProfilesList = (): UserProfile[] => {
-    if (typeof window === 'undefined') return []
-    const stored = localStorage.getItem('kraftedit_user_profiles')
-    if (stored) {
-      try {
-        return JSON.parse(stored) as UserProfile[]
-      } catch (e) {
-        return []
-      }
-    }
-    return []
-  }
-
-  const setLocalProfilesList = (list: UserProfile[]) => {
+  // Initialize DB in localStorage
+  useEffect(() => {
     if (typeof window === 'undefined') return
-    localStorage.setItem('kraftedit_user_profiles', JSON.stringify(list))
-  }
 
-  const bootstrapDefaultLocalUser = () => {
-    let profilesList = getLocalProfilesList()
-    if (profilesList.length === 0) {
-      // Bootstrap default designer profile
-      const defaultProfile: UserProfile = {
-        id: 'user-1',
-        username: 'AETHER_BLADE',
-        displayName: 'Aether Blade',
-        bio: 'Professional skin architect & digital obsidian artist. Pushing the boundaries of block-based aesthetics since 2014.',
-        avatarUrl: '/avatars/aether.jpg',
-        skinsCreated: 12,
-        totalDownloads: 4500,
-        followers: 120,
-        following: 5,
-        publicProfile: true,
-        createdAt: new Date(),
+    // Standard client setup helper
+    const client = getSupabase()
+
+    if (client) {
+      // Connect to real Supabase auth changes
+      const { data: { subscription } } = client.auth.onAuthStateChange(
+        async (event: string, session: any) => {
+          if (session?.user) {
+            const u: MockUser = {
+              uid: session.user.id,
+              email: session.user.email || '',
+              displayName: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'User'
+            }
+            setUser(u)
+            
+            // Try fetch supabase profile
+            const { data: profile, error } = await client
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single()
+            
+            if (!error && profile) {
+              setUserProfile({
+                id: profile.id,
+                username: profile.username,
+                displayName: profile.display_name,
+                bio: profile.bio || '',
+                avatarUrl: profile.avatar_url,
+                skinsCreated: profile.skins_created || 0,
+                totalDownloads: profile.total_downloads || 0,
+                followers: profile.followers || 0,
+                following: profile.following || 0,
+                publicProfile: profile.public_profile ?? true,
+                createdAt: new Date(profile.created_at)
+              })
+            } else {
+              // Create virtual or local profile
+              setUserProfile({
+                id: session.user.id,
+                username: u.displayName.toUpperCase(),
+                displayName: u.displayName,
+                bio: 'Crafting Minecraft identity.',
+                avatarUrl: '',
+                skinsCreated: 0,
+                totalDownloads: 0,
+                followers: 0,
+                following: 0,
+                createdAt: new Date()
+              })
+            }
+          } else {
+            setUser(null)
+            setUserProfile(null)
+          }
+          setLoading(false)
+          setIsInitialized(true)
+        }
+      )
+
+      return () => {
+        subscription.unsubscribe()
       }
-      profilesList = [defaultProfile]
-      setLocalProfilesList(profilesList)
     }
 
-    const defaultProfile = profilesList[0]
-    const defaultUser: SupabaseUser = {
+    // ─── Browser Fallback Storage Logic (Zero Config Sandbox mode) ────────────────────
+    const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+    let profilesList: UserProfile[] = []
+    if (!storedProfiles) {
+      profilesList = [...mockUsers]
+      localStorage.setItem('kraftedit_user_profiles', JSON.stringify(profilesList))
+    } else {
+      try {
+        profilesList = JSON.parse(storedProfiles)
+      } catch (e) {
+        profilesList = [...mockUsers]
+        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(profilesList))
+      }
+    }
+
+    const storedUser = localStorage.getItem('kraftedit_current_user')
+    if (storedUser) {
+      try {
+        const u = JSON.parse(storedUser) as MockUser
+        setUser(u)
+        const profile = profilesList.find((p) => p.id === u.uid)
+        if (profile) {
+          setUserProfile(profile)
+        } else {
+          setUserProfile(profilesList[0])
+        }
+      } catch (e) {
+        bootstrapDefaultUser(profilesList)
+      }
+    } else {
+      bootstrapDefaultUser(profilesList)
+    }
+
+    setLoading(false)
+    setIsInitialized(true)
+  }, [])
+
+  const bootstrapDefaultUser = (profilesList: UserProfile[]) => {
+    const defaultProfile = profilesList[0] || mockUsers[0]
+    const defaultUser: MockUser = {
       uid: defaultProfile.id,
       email: `${defaultProfile.username.toLowerCase()}@kraftedit.com`,
       displayName: defaultProfile.displayName || defaultProfile.username,
@@ -103,178 +169,87 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     localStorage.setItem('kraftedit_current_user', JSON.stringify(defaultUser))
   }
 
-  // Effect to synchronize authentication state
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    // If Supabase is NOT configured, run in LocalStorage offline mode
-    if (!supabase) {
-      const storedUser = localStorage.getItem('kraftedit_current_user')
-      if (storedUser) {
-        try {
-          const u = JSON.parse(storedUser) as SupabaseUser
-          setUser(u)
-          const profile = getLocalProfilesList().find((p) => p.id === u.uid)
-          if (profile) {
-            setUserProfile(profile)
-          } else {
-            bootstrapDefaultLocalUser()
-          }
-        } catch (e) {
-          bootstrapDefaultLocalUser()
-        }
-      } else {
-        bootstrapDefaultLocalUser()
-      }
-      setLoading(false)
-      setIsInitialized(true)
-      return
-    }
-
-    // Active Supabase Integration
-    const initSupaAuth = async () => {
-      try {
-        // Fetch current active Supabase Auth Session
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          const sUser = session.user
-          const mappedUser: SupabaseUser = {
-            uid: sUser.id,
-            email: sUser.email || '',
-            displayName: sUser.user_metadata?.displayName || sUser.user_metadata?.username || sUser.email?.split('@')[0] || 'Explorer',
-          }
-          setUser(mappedUser)
-
-          // Fetch associated user profile
-          let profile = await dbGetUserProfile(sUser.id)
-          if (!profile) {
-            // Lazy bootstrap database profile
-            profile = {
-              id: sUser.id,
-              username: sUser.user_metadata?.username || sUser.email?.split('@')[0].toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'EXPLORER',
-              displayName: sUser.user_metadata?.displayName || sUser.email?.split('@')[0] || 'Explorer',
-              bio: 'Pixel adventurer & Kraftedit creator.',
-              avatarUrl: '',
-              skinsCreated: 0,
-              totalDownloads: 0,
-              followers: 0,
-              following: 0,
-              publicProfile: true,
-              createdAt: new Date(),
-            }
-            await dbUpsertUserProfile(profile)
-          }
-          setUserProfile(profile)
-        } else {
-          setUser(null)
-          setUserProfile(null)
-        }
-      } catch (err) {
-        console.error('Supabase session load error:', err)
-      } finally {
-        setLoading(false)
-        setIsInitialized(true)
-      }
-    }
-
-    initSupaAuth()
-
-    // Listen for auth state transitions in real-time
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const sUser = session.user
-        const mappedUser: SupabaseUser = {
-          uid: sUser.id,
-          email: sUser.email || '',
-          displayName: sUser.user_metadata?.displayName || sUser.user_metadata?.username || sUser.email?.split('@')[0] || 'Explorer',
-        }
-        setUser(mappedUser)
-        
-        let profile = await dbGetUserProfile(sUser.id)
-        if (!profile) {
-          profile = {
-            id: sUser.id,
-            username: sUser.user_metadata?.username || sUser.email?.split('@')[0].toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'EXPLORER',
-            displayName: sUser.user_metadata?.displayName || sUser.email?.split('@')[0] || 'Explorer',
-            bio: 'Pixel adventurer & Kraftedit creator.',
-            avatarUrl: '',
-            skinsCreated: 0,
-            totalDownloads: 0,
-            followers: 0,
-            following: 0,
-            publicProfile: true,
-            createdAt: new Date(),
-          }
-          await dbUpsertUserProfile(profile)
-        }
-        setUserProfile(profile)
-      } else {
-        setUser(null)
-        setUserProfile(null)
-      }
-      setLoading(false)
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [supabase])
-
   const refreshUserProfile = async () => {
-    if (!user) return
-    const profile = await dbGetUserProfile(user.uid)
-    if (profile) {
-      setUserProfile(profile)
-    }
-  }
-
-  // Login
-  const login = async (email: string, password: string) => {
-    setLoading(true)
-    try {
-      if (!supabase) {
-        // Fallback Local Storage Login
-        const profiles = getLocalProfilesList()
-        const formattedUsername = email.split('@')[0].toUpperCase().replace(/[^A-Z0-9_]/g, '')
-        let profile = profiles.find(p => p.username === formattedUsername || p.id === 'user-1')
-        if (!profile) {
-          profile = profiles[0]
-        }
-
-        const activeUser: SupabaseUser = {
-          uid: profile.id,
-          email: email,
-          displayName: profile.displayName || profile.username,
-        }
-
-        setUser(activeUser)
-        setUserProfile(profile)
-        localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
+    const client = getSupabase()
+    if (client && user) {
+      const { data: profile, error } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', user.uid)
+        .single()
+      
+      if (!error && profile) {
+        setUserProfile({
+          id: profile.id,
+          username: profile.username,
+          displayName: profile.display_name,
+          bio: profile.bio || '',
+          avatarUrl: profile.avatar_url,
+          skinsCreated: profile.skins_created || 0,
+          totalDownloads: profile.total_downloads || 0,
+          followers: profile.followers || 0,
+          following: profile.following || 0,
+          publicProfile: profile.public_profile ?? true,
+          createdAt: new Date(profile.created_at)
+        })
         return
       }
+    }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) throw error
-
-      if (data.user) {
-        const activeUser: SupabaseUser = {
-          uid: data.user.id,
-          email: data.user.email || '',
-          displayName: data.user.user_metadata?.displayName || data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'User',
-        }
-        setUser(activeUser)
-        const profile = await dbGetUserProfile(data.user.id)
+    if (!user) return
+    const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+    if (storedProfiles) {
+      try {
+        const list = JSON.parse(storedProfiles) as UserProfile[]
+        const profile = list.find((p) => p.id === user.uid)
         if (profile) {
           setUserProfile(profile)
         }
+      } catch (e) {
+        console.error('Failed to parse user profiles in refresh', e)
       }
-    } catch (e: any) {
+    }
+  }
+
+  // Active Login
+  const login = async (email: string, password: string) => {
+    setLoading(true)
+    const client = getSupabase()
+    if (client) {
+      try {
+        const { data, error } = await client.auth.signInWithPassword({ email, password })
+        if (error) throw error
+        return
+      } catch (e: any) {
+        console.error('Supabase Login error:', e)
+        throw new Error(e.message || 'Supabase account login failed')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    try {
+      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
+      
+      const formattedUsername = email.split('@')[0].toUpperCase().replace(/[^A-Z0-9_]/g, '')
+      let profile = list.find(p => p.username === formattedUsername || p.id === 'user-1')
+      if (!profile) {
+        profile = list[0] || mockUsers[0]
+      }
+
+      const activeUser: MockUser = {
+        uid: profile.id,
+        email: email,
+        displayName: profile.displayName || profile.username,
+      }
+
+      setUser(activeUser)
+      setUserProfile(profile)
+      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
+    } catch (e) {
       console.error(e)
-      throw new Error(e.message || 'Supabase inloggen is mislukt')
+      throw new Error('Inloggen is failed')
     } finally {
       setLoading(false)
     }
@@ -283,178 +258,167 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   // Google Login
   const loginWithGoogle = async () => {
     setLoading(true)
-    try {
-      if (!supabase) {
-        // Fallback
-        const profiles = getLocalProfilesList()
-        const profile = profiles[0]
-        const activeUser: SupabaseUser = {
-          uid: profile.id,
-          email: 'google.explorer@kraftedit.com',
-          displayName: profile.displayName || profile.username,
-        }
-        setUser(activeUser)
-        setUserProfile(profile)
-        localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
+    const client = getSupabase()
+    if (client) {
+      try {
+        const { error } = await client.auth.signInWithOAuth({ provider: 'google' })
+        if (error) throw error
         return
+      } catch (e: any) {
+        console.error('Supabase Google OAuth failure:', e)
+        throw new Error(e.message || 'Google signing options failed')
+      } finally {
+        setLoading(false)
       }
-
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        }
-      })
-
-      if (error) throw error
-    } catch (e: any) {
-      console.error(e)
-      throw new Error(e.message || 'Google Auth is mislukt')
-    } finally {
-      setLoading(false)
     }
-  }
 
-  // Registration
-  const register = async (username: string, email: string, password: string) => {
-    setLoading(true)
     try {
-      const formattedUsername = username.toUpperCase().trim()
+      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
+      const profile = list[0] || mockUsers[0]
 
-      if (!supabase) {
-        // Fallback Registration
-        const profiles = getLocalProfilesList()
-        const exists = profiles.some(p => p.username.toUpperCase() === formattedUsername)
-        if (exists) {
-          throw new Error('Username is already taken')
-        }
-
-        const newId = `user-${Date.now()}`
-        const newProfile: UserProfile = {
-          id: newId,
-          username: formattedUsername,
-          displayName: username.trim(),
-          bio: 'Pixel adventurer & Kraftedit creator.',
-          avatarUrl: '',
-          skinsCreated: 0,
-          totalDownloads: 0,
-          followers: 0,
-          following: 0,
-          publicProfile: true,
-          createdAt: new Date(),
-        }
-
-        const updatedList = [...profiles, newProfile]
-        setLocalProfilesList(updatedList)
-
-        const activeUser: SupabaseUser = {
-          uid: newId,
-          email: email,
-          displayName: username.trim(),
-        }
-
-        setUser(activeUser)
-        setUserProfile(newProfile)
-        localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
-        return
+      const activeUser: MockUser = {
+        uid: profile.id,
+        email: 'google.explorer@kraftedit.com',
+        displayName: profile.displayName || profile.username,
       }
 
-      // Check username exists in `profiles` (Supabase query)
-      const { data: existingUser, error: checkErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', formattedUsername)
-        .maybeSingle()
-      
-      if (checkErr) console.warn('Username availability check warning:', checkErr)
-      if (existingUser) {
-        throw new Error('Gebruikersnaam is al bezet')
-      }
-
-      // Register the auth user
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            username: formattedUsername,
-            displayName: username.trim(),
-          },
-        },
-      })
-
-      if (error) throw error
-
-      if (data.user) {
-        const newProfile: UserProfile = {
-          id: data.user.id,
-          username: formattedUsername,
-          displayName: username.trim(),
-          bio: 'Pixel adventurer & Kraftedit creator.',
-          avatarUrl: '',
-          skinsCreated: 0,
-          totalDownloads: 0,
-          followers: 0,
-          following: 0,
-          publicProfile: true,
-          createdAt: new Date(),
-        }
-
-        await dbUpsertUserProfile(newProfile)
-
-        const activeUser: SupabaseUser = {
-          uid: data.user.id,
-          email: email,
-          displayName: username.trim(),
-        }
-        setUser(activeUser)
-        setUserProfile(newProfile)
-      }
-    } catch (e: any) {
-      console.error(e)
-      throw new Error(e.message || 'Registratie is mislukt')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Password Reset
-  const resetPassword = async (email: string) => {
-    setLoading(true)
-    try {
-      if (!supabase) {
-        await new Promise(resolve => setTimeout(resolve, 800))
-        return
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/login`,
-      })
-
-      if (error) throw error
-    } catch (e: any) {
-      console.error(e)
-      throw new Error(e.message || 'Wachtwoord herstellen mislukt')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Logout
-  const logout = async () => {
-    setLoading(true)
-    try {
-      if (supabase) {
-        await supabase.auth.signOut()
-      }
-      setUser(null)
-      setUserProfile(null)
-      localStorage.removeItem('kraftedit_current_user')
+      setUser(activeUser)
+      setUserProfile(profile)
+      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
     } catch (e) {
       console.error(e)
+      throw new Error('Google Sign-In failed')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Active Registration
+  const register = async (username: string, email: string, password: string) => {
+    setLoading(true)
+    const formattedUsername = username.toUpperCase().trim()
+    const client = getSupabase()
+
+    if (client) {
+      try {
+        const { data, error } = await client.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              display_name: username.trim(),
+              username: formattedUsername
+            }
+          }
+        })
+        if (error) throw error
+
+        if (data.user) {
+          // Attempt insert profile
+          await client.from('profiles').insert({
+            id: data.user.id,
+            username: formattedUsername,
+            display_name: username.trim(),
+            bio: 'Pixel adventurer & Kraftedit creator.',
+            avatar_url: '',
+            skins_created: 0,
+            total_downloads: 0,
+            followers: 0,
+            following: 0,
+            public_profile: true
+          })
+        }
+        return
+      } catch (e: any) {
+        console.error('Supabase registration fail:', e)
+        throw new Error(e.message || 'Registration failure under Supabase server')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    try {
+      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
+      
+      // Check if username already exists
+      const exists = list.some(p => p.username.toUpperCase() === formattedUsername)
+      if (exists) {
+        throw new Error('Username is already taken')
+      }
+
+      const newId = `user-${Date.now()}`
+      const newProfile: UserProfile = {
+        id: newId,
+        username: formattedUsername,
+        displayName: username.trim(),
+        bio: 'Pixel adventurer & Kraftedit creator.',
+        avatarUrl: '',
+        skinsCreated: 0,
+        totalDownloads: 0,
+        followers: 0,
+        following: 0,
+        createdAt: new Date(),
+      }
+
+      const updatedList = [...list, newProfile]
+      localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
+
+      const activeUser: MockUser = {
+        uid: newId,
+        email: email,
+        displayName: username.trim(),
+      }
+
+      setUser(activeUser)
+      setUserProfile(newProfile)
+      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
+    } catch (e: unknown) {
+      console.error(e)
+      const message = e instanceof Error ? e.message : 'Registration failed'
+      throw new Error(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Active Reset Password
+  const resetPassword = async (email: string) => {
+    setLoading(true)
+    const client = getSupabase()
+    if (client) {
+      try {
+        const { error } = await client.auth.resetPasswordForEmail(email)
+        if (error) throw error
+        return
+      } catch (e: any) {
+        console.error('Supabase password reset fails:', e)
+        throw new Error(e.message || 'Failed to request password reset')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 800))
+    } catch (e) {
+      console.error(e)
+      throw new Error('Failed to send reset email')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Active Logout
+  const logout = async () => {
+    const client = getSupabase()
+    if (client) {
+      await client.auth.signOut()
+    }
+    setUser(null)
+    setUserProfile(null)
+    localStorage.removeItem('kraftedit_current_user')
   }
 
   // Delete Account
@@ -462,15 +426,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     if (!user) return
     setLoading(true)
     try {
-      if (!supabase) {
-        // Fallback
-        const profiles = getLocalProfilesList()
-        const updatedList = profiles.filter(p => p.id !== user.uid)
-        setLocalProfilesList(updatedList)
-      } else {
-        // Best effort: delete user profiles row in public
-        await supabase.from('profiles').delete().eq('id', user.uid)
-        await supabase.auth.signOut()
+      const client = getSupabase()
+      if (client) {
+        // Real Supabase account deletes typically require custom backend service-role integration,
+        // we'll trigger state clear locally and sign out.
+        await client.auth.signOut()
+      }
+      
+      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+      if (storedProfiles) {
+        const list = JSON.parse(storedProfiles) as UserProfile[]
+        const updatedList = list.filter(p => p.id !== user.uid)
+        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
       }
       setUser(null)
       setUserProfile(null)
@@ -482,12 +449,62 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  // Update Profile Info
+  // Update Profile
   const updateProfile = async (data: { displayName: string; bio: string; avatarUrl: string; publicProfile: boolean }) => {
     if (!user || !userProfile) return
     setLoading(true)
+    const client = getSupabase()
+
+    if (client) {
+      try {
+        const { error: authErr } = await client.auth.updateUser({
+          data: { display_name: data.displayName }
+        })
+        if (authErr) throw authErr
+
+        const { error: profileErr } = await client
+          .from('profiles')
+          .update({
+            display_name: data.displayName,
+            bio: data.bio,
+            avatar_url: data.avatarUrl,
+            public_profile: data.publicProfile
+          })
+          .eq('id', user.uid)
+        
+        if (profileErr) throw profileErr
+      } catch (e: any) {
+        console.error('Supabase update profile details fails:', e)
+        toast({
+          variant: 'destructive',
+          title: 'Update failed',
+          description: e.message || 'Could not save your profile changes.',
+        })
+        setLoading(false)
+        return
+      }
+    }
+
     try {
-      const updatedProfile: UserProfile = {
+      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
+      if (storedProfiles) {
+        const list = JSON.parse(storedProfiles) as UserProfile[]
+        const updatedList = list.map(p => {
+          if (p.id === user.uid) {
+            return {
+              ...p,
+              displayName: data.displayName,
+              bio: data.bio,
+              avatarUrl: data.avatarUrl,
+              publicProfile: data.publicProfile,
+            }
+          }
+          return p
+        })
+        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
+      }
+
+      const updatedProfile = {
         ...userProfile,
         displayName: data.displayName,
         bio: data.bio,
@@ -495,30 +512,25 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         publicProfile: data.publicProfile,
       }
 
-      await dbUpsertUserProfile(updatedProfile)
       setUserProfile(updatedProfile)
 
-      // Update auth user display name locally
-      const updatedUserRef: SupabaseUser = {
+      const updatedUserRef = {
         ...user,
         displayName: data.displayName,
       }
       setUser(updatedUserRef)
+      localStorage.setItem('kraftedit_current_user', JSON.stringify(updatedUserRef))
       
-      if (!supabase) {
-        localStorage.setItem('kraftedit_current_user', JSON.stringify(updatedUserRef))
-      }
-
       toast({
-        title: 'Profiel bijgewerkt',
-        description: 'Je wijzigingen zijn succesvol opgeslagen.',
+        title: 'Profile updated',
+        description: 'Your changes have been saved successfully.',
       })
-    } catch (e: any) {
+    } catch (e) {
       console.error(e)
       toast({
         variant: 'destructive',
-        title: 'Bijwerken mislukt',
-        description: e.message || 'Kon je profielwijzigingen niet opslaan.',
+        title: 'Update failed',
+        description: 'Could not save your profile changes.',
       })
     } finally {
       setLoading(false)

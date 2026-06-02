@@ -8,9 +8,9 @@ import { Settings, Plus, Eye, Globe, Lock, Download, Heart, RefreshCw } from 'lu
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkinCard } from '@/components/gallery/skin-card'
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
+import { mockSkins } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/components/providers/supabase-auth-provider'
-import { dbGetSkins } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 type FilterOption = 'all' | 'published' | 'drafts'
@@ -21,25 +21,30 @@ export default function ProfilePage() {
   const [filterBy, setFilterBy] = useState<FilterOption>('all')
   const [savedSkins, setSavedSkins] = useState<any[]>([])
 
-  // Load saved skins from Supabase / localStorage with userProfile id
+  // Load saved skins from localStorage
   useEffect(() => {
-    if (userProfile?.id) {
-      dbGetSkins({ authorId: userProfile.id }).then(setSavedSkins)
+    const stored = localStorage.getItem('savedSkins')
+    if (stored) {
+      setSavedSkins(JSON.parse(stored))
     }
-  }, [userProfile?.id])
+  }, [])
 
-  // Map user's saved skins
+  // Combine mock skins with user's saved skins
   const userSkins = useMemo(() => {
     if (!userProfile) return []
-    return savedSkins.map(s => ({ 
-      ...s, 
-      imageUrl: s.imageUrl || s.textureData || '/default-skin.png',
-      isPublished: s.isPublished !== undefined ? s.isPublished : (s.published !== undefined ? s.published : true),
-      authorId: userProfile.id, 
-      authorName: userProfile.username, 
-      likes: s.likes || 0, 
-      downloads: s.downloads || 0 
-    }))
+    const mockUserSkins = mockSkins.filter((skin) => skin.authorId === userProfile.id)
+    return [
+      ...savedSkins.map(s => ({ 
+        ...s, 
+        imageUrl: s.imageUrl || s.textureData || '/default-skin.png',
+        isPublished: s.isPublished !== undefined ? s.isPublished : (s.published !== undefined ? s.published : true),
+        authorId: userProfile.id, 
+        authorName: userProfile.username, 
+        likes: s.likes || 0, 
+        downloads: s.downloads || 0 
+      })), 
+      ...mockUserSkins
+    ]
   }, [savedSkins, userProfile])
 
   const filteredSkins = useMemo(() => {

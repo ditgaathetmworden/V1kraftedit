@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Mail, Lock, User, Sparkles, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 
 export default function RegisterPage() {
   const router = useRouter()

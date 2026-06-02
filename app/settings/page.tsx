@@ -17,7 +17,7 @@ import {
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { useTheme } from '@/components/providers/theme-provider'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 import { AvatarImage } from '@/components/ui/avatar-image'
 
 export default function SettingsPage() {

@@ -19,7 +19,7 @@ import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { cn } from '@/lib/utils'
 import type { HistoryState, SkinFormat } from '@/types/skin'
 import { cloneImageData, imageDataToDataUrl } from '@/lib/skin-utils'
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 
 export default function EditorPage() {
   const router = useRouter()

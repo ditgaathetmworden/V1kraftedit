@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Mail, ArrowLeft, KeyRound, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/firebase-auth-provider'
+import { useAuth } from '@/components/providers/supabase-auth-provider'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
