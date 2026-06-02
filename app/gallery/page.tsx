@@ -20,6 +20,7 @@ export default function GalleryPage() {
   const [filter, setFilter] = useState<FilterOption>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [savedSkins, setSavedSkins] = useState<SkinData[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     const stored = localStorage.getItem('savedSkins')
@@ -72,6 +73,19 @@ export default function GalleryPage() {
 
     return result
   }, [allSkins, searchQuery, sortBy, filter])
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, filter, sortBy])
+
+  const ITEMS_PER_PAGE = 12
+  const totalPages = Math.ceil(filteredAndSortedSkins.length / ITEMS_PER_PAGE)
+  
+  const currentSkins = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+    return filteredAndSortedSkins.slice(startIndex, startIndex + ITEMS_PER_PAGE)
+  }, [filteredAndSortedSkins, currentPage])
 
   const sortOptions: { value: SortOption; label: string; icon: typeof TrendingUp }[] = [
     { value: 'trending', label: 'Hot', icon: Flame },
@@ -170,26 +184,51 @@ export default function GalleryPage() {
       </section>
 
       {/* Content */}
-      <main className="flex-1 overflow-auto p-3">
-        {filteredAndSortedSkins.length > 0 ? (
-          viewMode === 'grid' ? (
-            /* Grid View */
-            <div className="grid grid-cols-2 gap-2">
-              {filteredAndSortedSkins.map((skin) => (
-                <SkinCard key={skin.id} skin={skin} />
-              ))}
-            </div>
-          ) : (
-            /* Feed View */
-            <div className="flex flex-col gap-px">
-              {filteredAndSortedSkins.map((skin) => {
-                const comments = getCommentsBySkinId(skin.id)
-                return (
-                  <FeedCard key={skin.id} skin={skin} comments={comments} />
-                )
-              })}
-            </div>
-          )
+      <main className="flex-1 overflow-auto p-3 flex flex-col">
+        {currentSkins.length > 0 ? (
+          <>
+            {viewMode === 'grid' ? (
+              /* Grid View */
+              <div className="grid grid-cols-2 gap-2">
+                {currentSkins.map((skin) => (
+                  <SkinCard key={skin.id} skin={skin} />
+                ))}
+              </div>
+            ) : (
+              /* Feed View */
+              <div className="flex flex-col gap-px">
+                {currentSkins.map((skin) => {
+                  const comments = getCommentsBySkinId(skin.id)
+                  return (
+                    <FeedCard key={skin.id} skin={skin} comments={comments} />
+                  )
+                })}
+              </div>
+            )}
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between py-6 px-2 mt-auto">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 text-sm font-medium text-neon border border-border rounded-lg bg-obsidian-card disabled:opacity-30 disabled:cursor-not-allowed hover:bg-obsidian-elevated transition-colors"
+                >
+                  Previous
+                </button>
+                <span className="text-xs text-muted-foreground font-medium">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 text-sm font-medium text-neon border border-border rounded-lg bg-obsidian-card disabled:opacity-30 disabled:cursor-not-allowed hover:bg-obsidian-elevated transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
