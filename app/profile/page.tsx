@@ -75,12 +75,24 @@ export default function ProfilePage() {
     )
   }
 
+  if (!user) {
+    return (
+      <>
+        <AuthModal isOpen={!user} onClose={() => router.push('/')} />
+        <div className="flex h-[100dvh] items-center justify-center bg-background">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">Please sign in to view your profile.</p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   if (!userProfile) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-background">
         <div className="text-center">
-          <p className="text-sm text-muted-foreground">No profile data available.</p>
-          <p className="mt-2 text-xs text-muted-foreground/70">Please sign in to continue.</p>
+          <p className="text-sm text-muted-foreground">Loading profile data...</p>
         </div>
       </div>
     )
