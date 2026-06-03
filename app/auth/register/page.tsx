@@ -50,7 +50,7 @@ export default function RegisterPage() {
 
     try {
       // Dummy username as it's not required during registration anymore
-      await register(email, password)
+      await register('TEMP_USER', email, password)
       router.push('/auth/onboarding')
     } catch (authErr: unknown) {
       console.error('Registration failed:', authErr)

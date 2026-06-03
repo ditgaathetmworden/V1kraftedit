@@ -3,10 +3,9 @@
 import Link from 'next/link'
 import { Heart, Download, MessageCircle } from 'lucide-react'
 import type { SkinData } from '@/types/skin'
-import { formatNumber, cn } from '@/lib/utils'
+import { formatNumber, getCommentsBySkinId } from '@/lib/mock-data'
 import { SkinViewer3D } from '@/components/editor/skin-viewer-3d'
-import { dbGetComments } from '@/lib/supabase'
-import { useState, useEffect } from 'react'
+import { cn } from '@/lib/utils'
 
 // Default Steve skin from Minecraft textures (reliable source)
 export const DEFAULT_SKIN_URL = 'https://textures.minecraft.net/texture/1a4af718455d4aab528e7a61f86fa25e6a369d1768dcb13f7df319a713eb810b'
@@ -17,11 +16,7 @@ interface SkinCardProps {
 }
 
 export function SkinCard({ skin, className }: SkinCardProps) {
-  const [commentCount, setCommentCount] = useState(0)
-
-  useEffect(() => {
-    dbGetComments(skin.id).then(c => setCommentCount(c.length)).catch(console.error)
-  }, [skin.id])
+  const commentCount = getCommentsBySkinId(skin.id).length
 
   return (
     <Link
