@@ -19,11 +19,12 @@ interface AuthContextType {
   refreshUserProfile: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
   loginWithGoogle: () => Promise<void>
-  register: (username: string, email: string, password: string) => Promise<void>
+  register: (email: string, password: string) => Promise<void>
   resetPassword: (email: string) => Promise<void>
   logout: () => Promise<void>
   deleteAccount: () => Promise<void>
   updateProfile: (data: { displayName: string; bio: string; avatarUrl: string; publicProfile: boolean }) => Promise<void>
+  createProfile: (data: { username: string; displayName: string; bio: string; avatarUrl: string }) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -39,6 +40,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfile: async () => {},
+  createProfile: async () => {},
 })
 
 export const useAuth = () => useContext(AuthContext)
@@ -177,40 +179,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   }
 
   // Active Registration
-  const register = async (username: string, email: string, password: string) => {
+  const register = async (email: string, password: string) => {
     setLoading(true)
-    const formattedUsername = username.toUpperCase().trim()
     const client = getSupabase()
     if (!client) throw new Error('Supabase client not initialized')
 
     try {
-      const { data, error } = await client.auth.signUp({
+      const { error } = await client.auth.signUp({
         email,
-        password,
-        options: {
-          data: {
-            display_name: username.trim(),
-            username: formattedUsername
-          }
-        }
+        password
       })
       if (error) throw error
 
-      if (data.user) {
-        // Attempt insert profile
-        await client.from('profiles').insert({
-          id: data.user.id,
-          username: formattedUsername,
-          display_name: username.trim(),
-          bio: 'Pixel adventurer & Kraftedit creator.',
-          avatar_url: '',
-          skins_created: 0,
-          total_downloads: 0,
-          followers: 0,
-          following: 0,
-          public_profile: true
-        })
-      }
       return
     } catch (e: any) {
       console.error('Supabase registration fail:', e)
@@ -323,6 +303,35 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     }
   }
 
+  // Create Profile
+  const createProfile = async (data: { username: string; displayName: string; bio: string; avatarUrl: string }) => {
+    if (!user) return
+    setLoading(true)
+    const client = getSupabase()
+    if (!client) throw new Error('Supabase client not initialized')
+    
+    try {
+      const { error } = await client
+        .from('profiles')
+        .insert({
+          id: user.uid,
+          username: data.username.toUpperCase().trim(),
+          display_name: data.displayName,
+          bio: data.bio || '',
+          avatar_url: data.avatarUrl || '',
+          public_profile: true
+        })
+      
+      if (error) throw error
+      await refreshUserProfile()
+    } catch (e: any) {
+      console.error('Supabase profile creation fails:', e)
+      throw new Error(e.message || 'Failed to create profile')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -338,6 +347,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         logout,
         deleteAccount,
         updateProfile,
+        createProfile
       }}
     >
       {children}
