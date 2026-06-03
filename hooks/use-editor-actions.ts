@@ -1,4 +1,4 @@
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 import { useEditorStore } from '@/stores/editor-store'
 import { SkinFormat } from '@/types/skin'
 import { createBlankSkin, downloadSkin, imageDataToDataUrl, loadSkinFromFile } from '@/lib/skin-utils'

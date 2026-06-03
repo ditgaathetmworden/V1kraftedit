@@ -10,7 +10,7 @@ import { SkinCard } from '@/components/gallery/skin-card'
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
 import { mockSkins } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 import { useRouter } from 'next/navigation'
 
 type FilterOption = 'all' | 'published' | 'drafts'

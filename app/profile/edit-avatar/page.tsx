@@ -6,7 +6,7 @@ import { Save, ArrowLeft, User, RotateCcw, X } from 'lucide-react'
 import { PixelCanvas2D } from '@/components/editor/pixel-canvas-2d'
 import { CombinedToolbar } from '@/components/editor/combined-toolbar'
 import { ColorPickerModal } from '@/components/editor/color-picker-modal'
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 import { loadSkinFromUrl, imageDataToDataUrl, createDefaultSteveSkin } from '@/lib/skin-utils'
 import type { BrushTool, RGBAColor } from '@/types/skin'
 

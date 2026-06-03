@@ -6,10 +6,9 @@ import { Search, TrendingUp, Clock, Flame, Grid3X3, List, Heart, Download, Messa
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkinCard } from '@/components/gallery/skin-card'
 import { SkinViewer3D } from '@/components/editor/skin-viewer-3d'
+import { mockSkins, formatNumber, getCommentsBySkinId, formatTimeAgo } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import type { SkinData, Comment } from '@/types/skin'
-import { dbGetSkins, dbGetComments, dbAddComment } from '@/lib/supabase'
-import { formatNumber } from '@/lib/mock-data'
 
 type SortOption = 'trending' | 'newest' | 'popular'
 type FilterOption = 'all' | '64x64' | '128x128'
@@ -20,43 +19,42 @@ export default function GalleryPage() {
   const [sortBy, setSortBy] = useState<SortOption>('trending')
   const [filter, setFilter] = useState<FilterOption>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [skinsList, setSkinsList] = useState<SkinData[]>([])
+  const [savedSkins, setSavedSkins] = useState<SkinData[]>([])
   const [currentPage, setCurrentPage] = useState(1)
-  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const loadSkins = async () => {
+    const stored = localStorage.getItem('savedSkins')
+    if (stored) {
       try {
-        setIsLoading(true)
-        const skins = await dbGetSkins({ isPublished: true })
-        setSkinsList(skins)
+        setSavedSkins(JSON.parse(stored) as SkinData[])
       } catch (e) {
-        console.error('Failed to load gallery skins:', e)
-      } finally {
-        setIsLoading(false)
+        console.error('Failed to parse savedSkins from localStorage', e)
       }
     }
-    loadSkins()
   }, [])
 
   const allSkins = useMemo(() => {
-    return skinsList.map((s: SkinData) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description || '',
-      imageUrl: s.imageUrl || '/default-skin.png',
-      format: s.format || '64x64',
-      createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
-      updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
-      authorId: s.authorId || 'user-1',
-      authorName: s.authorName || 'AETHER_BLADE',
-      authorAvatar: s.authorAvatar,
-      likes: s.likes || 0,
-      downloads: s.downloads || 0,
-      isPublished: true,
-      tags: s.tags || []
-    }))
-  }, [skinsList])
+    const publishedSaved = savedSkins
+      .filter((s: SkinData) => s.isPublished)
+      .map((s: SkinData) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description || '',
+        imageUrl: s.imageUrl || (s as any).textureData || '/default-skin.png',
+        format: s.format || '64x64',
+        createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
+        updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+        authorId: s.authorId || 'user-1',
+        authorName: s.authorName || 'AETHER_BLADE',
+        authorAvatar: s.authorAvatar,
+        likes: s.likes || 0,
+        downloads: s.downloads || 0,
+        isPublished: true,
+        tags: s.tags || []
+      }))
+    // Custom published skins display at the top of the feed/grid
+    return [...publishedSaved, ...mockSkins]
+  }, [savedSkins])
 
   const filteredAndSortedSkins = useMemo(() => {
     let result = allSkins.filter((skin) =>
@@ -187,11 +185,7 @@ export default function GalleryPage() {
 
       {/* Content */}
       <main className="flex-1 overflow-auto p-3 flex flex-col">
-        {isLoading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-neon border-t-transparent" />
-          </div>
-        ) : currentSkins.length > 0 ? (
+        {currentSkins.length > 0 ? (
           <>
             {viewMode === 'grid' ? (
               /* Grid View */
@@ -203,9 +197,12 @@ export default function GalleryPage() {
             ) : (
               /* Feed View */
               <div className="flex flex-col gap-px">
-                {currentSkins.map((skin) => (
-                  <FeedCard key={skin.id} skin={skin} />
-                ))}
+                {currentSkins.map((skin) => {
+                  const comments = getCommentsBySkinId(skin.id)
+                  return (
+                    <FeedCard key={skin.id} skin={skin} comments={comments} />
+                  )
+                })}
               </div>
             )}
             
@@ -248,36 +245,33 @@ export default function GalleryPage() {
   )
 }
 
-function FeedCard({ skin }: { skin: SkinData }) {
+// ─── Feed Card ────────────────────────────────────────────────────────────────
+
+import type { SkinData, Comment } from '@/types/skin'
+
+function FeedCard({ skin, comments }: { skin: SkinData; comments: Comment[] }) {
   const [liked, setLiked] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentInput, setCommentInput] = useState('')
-  const [localComments, setLocalComments] = useState<Comment[]>([])
+  const [localComments, setLocalComments] = useState(comments)
 
-  useEffect(() => {
-    if (commentsOpen) {
-      dbGetComments(skin.id).then(setLocalComments)
-    }
-  }, [commentsOpen, skin.id])
-
-  async function handleComment(e: React.FormEvent) {
+  function handleComment(e: React.FormEvent) {
     e.preventDefault()
     const text = commentInput.trim()
     if (!text) return
-    
-    try {
-      const newComment = await dbAddComment({
+    setLocalComments((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}`,
         skinId: skin.id,
         authorId: 'me',
         authorName: 'You',
         content: text,
-        createdAt: new Date()
-      })
-      setLocalComments((prev) => [newComment, ...prev])
-      setCommentInput('')
-    } catch (err) {
-      console.error(err)
-    }
+        likes: 0,
+        createdAt: new Date(),
+      },
+    ])
+    setCommentInput('')
   }
 
   return (
@@ -315,7 +309,7 @@ function FeedCard({ skin }: { skin: SkinData }) {
           {/* Divider */}
           <div className="my-3 h-px bg-border" />
 
-          {/* Stats row — icon + count inline */}
+          {/* Stats row — icon + count inline, like the reference */}
           <div className="flex items-center gap-5">
             <button
               onClick={() => setLiked((v) => !v)}

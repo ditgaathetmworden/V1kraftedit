@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 
 export function GoogleSignInButton() {
   const [isLoading, setIsLoading] = useState(false)

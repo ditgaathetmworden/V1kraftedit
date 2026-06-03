@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { ThemeProvider } from '@/components/providers/theme-provider'
-import { SupabaseAuthProvider } from '@/components/providers/supabase-auth-provider'
+import { FirebaseAuthProvider } from '@/components/providers/firebase-auth-provider'
 import { Toaster } from '@/components/ui/toaster'
 import './globals.css'
 
@@ -43,10 +43,10 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider>
-          <SupabaseAuthProvider>
+          <FirebaseAuthProvider>
             {children}
             <Toaster />
-          </SupabaseAuthProvider>
+          </FirebaseAuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { X, Globe, Lock, Heart, Download, MessageCircle, ChevronLeft } from 'lucide-react'
 import { SkinViewer3D } from '@/components/editor/skin-viewer-3d'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 
 interface SaveModalProps {
   isOpen: boolean

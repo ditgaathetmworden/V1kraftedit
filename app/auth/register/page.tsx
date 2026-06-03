@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Mail, Lock, User, Sparkles, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/components/providers/supabase-auth-provider'
+import { useAuth } from '@/components/providers/firebase-auth-provider'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -33,10 +33,6 @@ export default function RegisterPage() {
     setError('')
 
     const formattedUsername = username.toUpperCase().trim()
-    if (!formattedUsername) {
-      setError('Username is required')
-      return
-    }
     if (formattedUsername.length < 3) {
       setError('Username must be at least 3 characters')
       return
@@ -88,7 +84,7 @@ export default function RegisterPage() {
           {/* Username */}
           <div className="space-y-2">
             <label htmlFor="username" className="text-xs font-medium text-muted-foreground">
-              Username <span className="text-destructive">*</span>
+              Username
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
