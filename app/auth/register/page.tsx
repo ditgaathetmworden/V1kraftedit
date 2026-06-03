@@ -10,6 +10,7 @@ import { useAuth } from '@/components/providers/supabase-auth-provider'
 export default function RegisterPage() {
   const router = useRouter()
   const { register } = useAuth()
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -31,6 +32,16 @@ export default function RegisterPage() {
     e.preventDefault()
     setError('')
 
+    const formattedUsername = username.toUpperCase().trim()
+    if (!formattedUsername) {
+      setError('Username is required')
+      return
+    }
+    if (formattedUsername.length < 3) {
+      setError('Username must be at least 3 characters')
+      return
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       return
@@ -49,9 +60,8 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      // Dummy username as it's not required during registration anymore
-      await register('TEMP_USER', email, password)
-      router.push('/auth/onboarding')
+      await register(username, email, password)
+      router.push('/')
     } catch (authErr: unknown) {
       console.error('Registration failed:', authErr)
       const message = authErr instanceof Error ? authErr.message : 'An error occurred during registration'
@@ -75,6 +85,27 @@ export default function RegisterPage() {
       {/* Form */}
       <main className="flex-1 overflow-auto px-6">
         <form onSubmit={handleSubmit} className="space-y-4 max-w-md mx-auto">
+          {/* Username */}
+          <div className="space-y-2">
+            <label htmlFor="username" className="text-xs font-medium text-muted-foreground">
+              Username <span className="text-destructive">*</span>
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                placeholder="YOUR_USERNAME"
+                maxLength={16}
+                className="h-12 w-full rounded-xl border border-border bg-obsidian-card pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon focus:outline-none focus:ring-1 focus:ring-neon"
+                required
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">Letters, numbers, and underscores only</p>
+          </div>
+
           {/* Email */}
           <div className="space-y-2">
             <label htmlFor="email" className="text-xs font-medium text-muted-foreground">

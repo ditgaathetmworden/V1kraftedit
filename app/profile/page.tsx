@@ -62,19 +62,23 @@ export default function ProfilePage() {
     { value: 'drafts', label: 'Private', icon: Lock },
   ]
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!loading && (!user || !userProfile)) {
-      router.replace('/auth/login')
-    }
-  }, [loading, user, userProfile, router])
-
-  if (loading || !user || !userProfile) {
+  if (loading) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="h-8 w-8 animate-spin text-neon" />
           <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user || !userProfile) {
+    return (
+      <div className="flex h-[100dvh] items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <p className="text-sm text-muted-foreground mb-4">Please sign in to view your profile.</p>
+          <GoogleSignInButton />
         </div>
       </div>
     )
