@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { AvatarImage } from '@/components/ui/avatar-image'
@@ -8,44 +8,35 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Download, Eye, Share2, UserPlus, UserCheck } from 'lucide-react'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkinCard } from '@/components/gallery/skin-card'
-import { formatNumber } from '@/lib/mock-data'
-import { cn } from '@/lib/utils'
-import { dbGetUserProfile, dbGetSkins } from '@/lib/supabase'
-import type { UserProfile, SkinData } from '@/types/skin'
+import { dbGetUserById, dbGetSkinsByAuthor } from '@/lib/supabase'
+import { formatNumber, cn } from '@/lib/utils'
 
 export default function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
   const [isFollowing, setIsFollowing] = useState(false)
   const [followerCount, setFollowerCount] = useState(0)
-  const [user, setUser] = useState<UserProfile | null>(null)
-  const [userSkins, setUserSkins] = useState<SkinData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  
+  const [user, setUser] = useState<any | null>(null)
+  const [userSkins, setUserSkins] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let active = true
-    const loadProfile = async () => {
-      try {
-        setIsLoading(true)
-        const profile = await dbGetUserProfile(id)
-        if (active && profile) {
-          setUser(profile)
-          setFollowerCount(profile.followers)
-          const skins = await dbGetSkins({ authorId: id, isPublished: true })
-          if (active) {
+    async function loadData() {
+        setLoading(true)
+        try {
+            const userData = await dbGetUserById(id)
+            setUser(userData)
+            setFollowerCount(userData.followers)
+            const skins = await dbGetSkinsByAuthor(id)
             setUserSkins(skins)
-          }
+        } catch(e) {
+            console.error("Failed to load user profile", e)
+        } finally {
+            setLoading(false)
         }
-      } catch (err) {
-        console.error('Failed to load profile details:', err)
-      } finally {
-        if (active) setIsLoading(false)
-      }
     }
-    loadProfile()
-    return () => {
-      active = false
-    }
+    loadData()
   }, [id])
   
   // Mock: check if this is the logged-in user's own profile
@@ -56,12 +47,11 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
     setFollowerCount(prev => isFollowing ? prev - 1 : prev + 1)
   }
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-background pb-16">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neon border-t-transparent" />
-        <BottomNav />
-      </div>
+        <div className="flex min-h-[100dvh] items-center justify-center bg-background pb-16">
+            <p className="text-muted-foreground">Loading...</p>
+        </div>
     )
   }
 

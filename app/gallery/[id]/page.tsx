@@ -8,11 +8,10 @@ import { AvatarImage } from '@/components/ui/avatar-image'
 import dynamic from 'next/dynamic'
 const SkinViewer3D = dynamic(() => import('@/components/editor/skin-viewer-3d').then(mod => mod.SkinViewer3D), { ssr: false })
 import { BottomNav } from '@/components/layout/bottom-nav'
-import { getSupabase, dbGetSkinById, dbGetComments, dbAddComment } from '@/lib/supabase'
-import { formatNumber, formatTimeAgo } from '@/lib/mock-data'
+import { dbGetComments } from '@/lib/supabase'
+import { formatNumber, formatTimeAgo, cn } from '@/lib/utils'
 import { downloadSkinPNG } from '@/lib/skin-utils'
 import { ChevronLeft, Download, Edit, Heart, Share2, User, MessageCircle, Send } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import type { SkinData, Comment } from '@/types/skin'
 
 export default function SkinDetailPage() {
@@ -28,31 +27,65 @@ export default function SkinDetailPage() {
 
   useEffect(() => {
     const skinId = params.id as string
-    let active = true
-
-    const loadSkinData = async () => {
+    
+    // Load local comments for this skin
+    let localComments: Comment[] = []
+    const storedComments = localStorage.getItem('savedComments')
+    if (storedComments) {
       try {
-        setLoadingSkin(true)
-        const found = await dbGetSkinById(skinId)
-        if (found && active) {
-          setSkin(found)
-          setLikeCount(found.likes)
-          const fetchedComments = await dbGetComments(skinId)
-          if (active) {
-            setComments(fetchedComments)
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load skin detail:', err)
-      } finally {
-        if (active) setLoadingSkin(false)
+        const parsed = JSON.parse(storedComments) as any[]
+        localComments = parsed
+          .filter(c => c.skinId === skinId)
+          .map(c => ({
+            ...c,
+            createdAt: new Date(c.createdAt)
+          }))
+      } catch (e) {
+        console.error('Failed to parse comments from localStorage', e)
       }
     }
 
-    loadSkinData()
-    return () => {
-      active = false
+    // Check in localStorage
+    const stored = localStorage.getItem('savedSkins')
+    let found = null
+    if (stored) {
+      try {
+        const saved = JSON.parse(stored) as any[]
+        found = saved.find(s => s.id === skinId)
+      } catch (e) {
+        console.error('Failed to parse savedSkins from localStorage', e)
+      }
     }
+
+    if (found) {
+        const mappedSkin: SkinData = {
+          id: found.id,
+          name: found.name,
+          description: found.description || '',
+          imageUrl: found.imageUrl || found.textureData || '/default-skin.png',
+          format: found.format || '64x64',
+          createdAt: found.createdAt ? new Date(found.createdAt) : new Date(),
+          updatedAt: found.updatedAt ? new Date(found.updatedAt) : new Date(),
+          authorId: found.authorId || 'user-1',
+          authorName: found.authorName || 'AETHER_BLADE',
+          authorAvatar: found.authorAvatar,
+          likes: found.likes || 0,
+          downloads: found.downloads || 0,
+          isPublished: found.published || found.isPublished || false,
+          tags: found.tags || []
+        }
+        setSkin(mappedSkin)
+        setLikeCount(mappedSkin.likes)
+    }
+
+    dbGetComments(skinId).then(dbComments => {
+        setComments([...localComments, ...dbComments])
+        setLoadingSkin(false)
+    }).catch(e => {
+        console.error("Error loading comments", e)
+        setComments(localComments)
+        setLoadingSkin(false)
+    })
   }, [params.id])
 
   if (loadingSkin) {
@@ -123,23 +156,26 @@ export default function SkinDetailPage() {
     setLikeCount(prev => liked ? prev - 1 : prev + 1)
   }
 
-  const handleSubmitComment = async () => {
-    if (!newComment.trim() || !skin) return
+  const handleSubmitComment = () => {
+    if (!newComment.trim()) return
     
-    try {
-      const commentObj = await dbAddComment({
-        skinId: skin.id,
-        authorId: 'user-current',
-        authorName: 'You',
-        content: newComment.trim(),
-        createdAt: new Date(),
-      })
-      
-      setComments(prev => [commentObj, ...prev])
-      setNewComment('')
-    } catch (err) {
-      console.error('Failed to add comment:', err)
+    const skinId = skin.id
+    const commentObj = {
+      id: `comment-${Date.now()}`,
+      skinId: skinId,
+      authorId: 'user-current',
+      authorName: 'You',
+      content: newComment.trim(),
+      likes: 0,
+      createdAt: new Date(),
     }
+    
+    const storedComments = JSON.parse(localStorage.getItem('savedComments') || '[]')
+    storedComments.push(commentObj)
+    localStorage.setItem('savedComments', JSON.stringify(storedComments))
+    
+    setComments(prev => [commentObj, ...prev])
+    setNewComment('')
   }
 
   return (

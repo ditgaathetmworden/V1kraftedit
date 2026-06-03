@@ -17,10 +17,7 @@ interface AuthContextType {
   loading: boolean
   isInitialized: boolean
   refreshUserProfile: () => Promise<void>
-  login: (email: string, password: string) => Promise<void>
   loginWithGoogle: () => Promise<void>
-  register: (email: string, password: string) => Promise<void>
-  resetPassword: (email: string) => Promise<void>
   logout: () => Promise<void>
   deleteAccount: () => Promise<void>
   updateProfile: (data: { displayName: string; bio: string; avatarUrl: string; publicProfile: boolean }) => Promise<void>
@@ -33,10 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   isInitialized: false,
   refreshUserProfile: async () => {},
-  login: async () => {},
   loginWithGoogle: async () => {},
-  register: async () => {},
-  resetPassword: async () => {},
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfile: async () => {},
@@ -142,24 +136,6 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  // Active Login
-  const login = async (email: string, password: string) => {
-    setLoading(true)
-    const client = getSupabase()
-    if (!client) throw new Error('Supabase client not initialized')
-    
-    try {
-      const { data, error } = await client.auth.signInWithPassword({ email, password })
-      if (error) throw error
-      return
-    } catch (e: any) {
-      console.error('Supabase Login error:', e)
-      throw new Error(e.message || 'Supabase account login failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   // Google Login
   const loginWithGoogle = async () => {
     setLoading(true)
@@ -167,52 +143,12 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     if (!client) throw new Error('Supabase client not initialized')
     
     try {
-      const { error } = await client.auth.signInWithOAuth({ provider: 'google' })
+      const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/profile' } })
       if (error) throw error
       return
     } catch (e: any) {
       console.error('Supabase Google OAuth failure:', e)
       throw new Error(e.message || 'Google signing options failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Active Registration
-  const register = async (email: string, password: string) => {
-    setLoading(true)
-    const client = getSupabase()
-    if (!client) throw new Error('Supabase client not initialized')
-
-    try {
-      const { error } = await client.auth.signUp({
-        email,
-        password
-      })
-      if (error) throw error
-
-      return
-    } catch (e: any) {
-      console.error('Supabase registration fail:', e)
-      throw new Error(e.message || 'Registration failure under Supabase server')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Active Reset Password
-  const resetPassword = async (email: string) => {
-    setLoading(true)
-    const client = getSupabase()
-    if (!client) throw new Error('Supabase client not initialized')
-    
-    try {
-      const { error } = await client.auth.resetPasswordForEmail(email)
-      if (error) throw error
-      return
-    } catch (e: any) {
-      console.error('Supabase password reset fails:', e)
-      throw new Error(e.message || 'Failed to request password reset')
     } finally {
       setLoading(false)
     }
@@ -340,10 +276,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         loading,
         isInitialized,
         refreshUserProfile,
-        login,
         loginWithGoogle,
-        register,
-        resetPassword,
         logout,
         deleteAccount,
         updateProfile,

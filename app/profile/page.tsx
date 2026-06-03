@@ -8,7 +8,6 @@ import { Settings, Plus, Eye, Globe, Lock, Download, Heart, RefreshCw } from 'lu
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkinCard } from '@/components/gallery/skin-card'
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
-import { mockSkins } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/components/providers/supabase-auth-provider'
 import { useRouter } from 'next/navigation'
@@ -29,12 +28,10 @@ export default function ProfilePage() {
     }
   }, [])
 
-  // Combine mock skins with user's saved skins
+  // Combine user's saved skins
   const userSkins = useMemo(() => {
     if (!userProfile) return []
-    const mockUserSkins = mockSkins.filter((skin) => skin.authorId === userProfile.id)
-    return [
-      ...savedSkins.map(s => ({ 
+    return savedSkins.map(s => ({ 
         ...s, 
         imageUrl: s.imageUrl || s.textureData || '/default-skin.png',
         isPublished: s.isPublished !== undefined ? s.isPublished : (s.published !== undefined ? s.published : true),
@@ -42,9 +39,7 @@ export default function ProfilePage() {
         authorName: userProfile.username, 
         likes: s.likes || 0, 
         downloads: s.downloads || 0 
-      })), 
-      ...mockUserSkins
-    ]
+      }))
   }, [savedSkins, userProfile])
 
   const filteredSkins = useMemo(() => {
@@ -62,20 +57,17 @@ export default function ProfilePage() {
     { value: 'drafts', label: 'Private', icon: Lock },
   ]
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!loading && (!user || !userProfile)) {
-      router.replace('/auth/login')
-    }
-  }, [loading, user, userProfile, router])
+  // Redirect if not authenticated (instead of silent redirect, show modals)
+  // Logic: 
+  // 1. If loading, show spinner.
+  // 2. If !loading && !user, show AuthModal.
+  // 3. If !loading && user && !userProfile, show OnboardingModal.
+  // 4. If !loading && user && userProfile, show content.
 
-  if (loading || !user || !userProfile) {
+  if (loading) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <RefreshCw className="h-8 w-8 animate-spin text-neon" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
+        <RefreshCw className="h-8 w-8 animate-spin text-neon" />
       </div>
     )
   }
@@ -87,6 +79,9 @@ export default function ProfilePage() {
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background pb-16">
+      <AuthModal isOpen={!user} />
+      <OnboardingModal isOpen={!!user && !userProfile} />
+
       {/* Header */}
       <header className="shrink-0 border-b border-border bg-obsidian-surface/95 backdrop-blur-lg">
         <div className="flex h-11 items-center justify-between px-3">
@@ -103,105 +98,109 @@ export default function ProfilePage() {
           </Link>
         </div>
       </header>
+      
+      {userProfile && (
+        <>
+          {/* Profile Card */}
+          <section className="shrink-0 border-b border-border bg-obsidian-surface px-4 py-4 max-w-sm mx-auto w-full">
+            <div className="flex items-center gap-4">
+              {/* Avatar */}
+              <div className="relative">
+                <div 
+                  className="h-16 w-16 overflow-hidden rounded-xl border-2 border-neon bg-obsidian-elevated cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => router.push('/profile/edit-avatar')}
+                >
+                  <AvatarImage
+                    src={userProfile.avatarUrl}
+                    alt={userProfile.username}
+                    className="h-full w-full"
+                  />
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-obsidian-surface bg-neon" />
+              </div>
 
-      {/* Profile Card */}
-      <section className="shrink-0 border-b border-border bg-obsidian-surface px-4 py-4 max-w-sm mx-auto w-full">
-        <div className="flex items-center gap-4">
-          {/* Avatar */}
-          <div className="relative">
-            <div 
-              className="h-16 w-16 overflow-hidden rounded-xl border-2 border-neon bg-obsidian-elevated cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={() => router.push('/profile/edit-avatar')}
-            >
-              <AvatarImage
-                src={userProfile.avatarUrl}
-                alt={userProfile.username}
-                className="h-full w-full"
-              />
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-obsidian-surface bg-neon" />
-          </div>
-
-          {/* Info */}
-          <div className="flex-1">
-            <h2 className="text-base font-bold text-foreground">{userProfile.displayName || userProfile.username}</h2>
-            <p className="text-[11px] text-neon font-semibold mb-1">@{userProfile.username}</p>
-            {userProfile.bio && (
-              <p className="text-[11px] text-muted-foreground line-clamp-2 max-w-[210px] my-1 leading-snug">
-                {userProfile.bio}
-              </p>
-            )}
-            <div className="mt-1 flex items-center gap-4 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                {userProfile.skinsCreated} skins
-              </span>
-              <span className="flex items-center gap-1">
-                <Download className="h-3 w-3" />
-                {formatShortNum(userProfile.totalDownloads)}
-              </span>
-              <span className="flex items-center gap-1">
-                <Heart className="h-3 w-3" />
-                {formatShortNum(userProfile.followers)} followers
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Filter & Create */}
-      <section className="shrink-0 border-b border-border bg-obsidian-surface px-3 py-2">
-        <div className="flex items-center gap-2 max-w-sm mx-auto w-full">
-          {/* Filter Pills */}
-          <div className="flex flex-1 gap-1.5">
-            {filterOptions.map(({ value, label, icon: Icon }) => (
-              <button
-                key={value}
-                onClick={() => setFilterBy(value)}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-semibold tracking-wide transition-all cursor-pointer',
-                  filterBy === value
-                    ? 'pill-selected'
-                    : 'pill-unselected'
+              {/* Info */}
+              <div className="flex-1">
+                <h2 className="text-base font-bold text-foreground">{userProfile.displayName || userProfile.username}</h2>
+                <p className="text-[11px] text-neon font-semibold mb-1">@{userProfile.username}</p>
+                {userProfile.bio && (
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 max-w-[210px] my-1 leading-snug">
+                    {userProfile.bio}
+                  </p>
                 )}
+                <div className="mt-1 flex items-center gap-4 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Eye className="h-3 w-3" />
+                    {userProfile.skinsCreated} skins
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Download className="h-3 w-3" />
+                    {formatShortNum(userProfile.totalDownloads)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Heart className="h-3 w-3" />
+                    {formatShortNum(userProfile.followers)} followers
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Filter & Create */}
+          <section className="shrink-0 border-b border-border bg-obsidian-surface px-3 py-2">
+            <div className="flex items-center gap-2 max-w-sm mx-auto w-full">
+              {/* Filter Pills */}
+              <div className="flex flex-1 gap-1.5">
+                {filterOptions.map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setFilterBy(value)}
+                    className={cn(
+                      'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-semibold tracking-wide transition-all cursor-pointer',
+                      filterBy === value
+                        ? 'pill-selected'
+                        : 'pill-unselected'
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Create Button */}
+              <Link
+                href="/editor"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neon text-obsidian transition-colors hover:bg-neon-bright"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
+                <Plus className="h-4 w-4" />
+              </Link>
+            </div>
+          </section>
 
-          {/* Create Button */}
-          <Link
-            href="/editor"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neon text-obsidian transition-colors hover:bg-neon-bright"
-          >
-            <Plus className="h-4 w-4" />
-          </Link>
-        </div>
-      </section>
-
-      {/* Skins Grid */}
-      <main className="flex-1 overflow-auto p-3 max-w-md mx-auto w-full">
-        {filteredSkins.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
-            {filteredSkins.map((skin) => (
-              <SkinCard key={skin.id} skin={skin} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center py-10">
-            <p className="text-sm text-muted-foreground">No skins yet</p>
-            <Link
-              href="/editor"
-              className="mt-3 flex items-center gap-2 rounded-lg bg-neon px-4 py-2 text-xs font-semibold text-obsidian transition-colors hover:bg-neon-bright"
-            >
-              <Plus className="h-4 w-4" />
-              Create Your First Skin
-            </Link>
-          </div>
-        )}
-      </main>
+          {/* Skins Grid */}
+          <main className="flex-1 overflow-auto p-3 max-w-md mx-auto w-full">
+            {filteredSkins.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {filteredSkins.map((skin) => (
+                  <SkinCard key={skin.id} skin={skin} />
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center py-10">
+                <p className="text-sm text-muted-foreground">No skins yet</p>
+                <Link
+                  href="/editor"
+                  className="mt-3 flex items-center gap-2 rounded-lg bg-neon px-4 py-2 text-xs font-semibold text-obsidian transition-colors hover:bg-neon-bright"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Your First Skin
+                </Link>
+              </div>
+            )}
+          </main>
+        </>
+      )}
 
       {/* Bottom Navigation */}
       <BottomNav />
