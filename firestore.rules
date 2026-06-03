@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Helper for alphanumeric patterns (username)
+    function isValidUsernamePattern(username) {
+      return username.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // ENFORCED BLUEPRINTS
+
+    // User Profile schema validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'skinsCreated', 'totalDownloads', 'followers', 'following'])
+        && data.keys().size() >= 6
+        && data.id is string
+        && data.id.size() <= 128
+        && data.username is string
+        && data.username.size() >= 3
+        && data.username.size() <= 30
+        && isValidUsernamePattern(data.username)
+        && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100))
+        && (data.bio == null || (data.bio is string && data.bio.size() <= 500))
+        && (data.avatarUrl == null || (data.avatarUrl is string && data.avatarUrl.size() <= 2048))
+        && data.skinsCreated is int
+        && data.skinsCreated >= 0
+        && data.totalDownloads is int
+        && data.totalDownloads >= 0
+        && data.followers is int
+        && data.followers >= 0
+        && data.following is int
+        && data.following >= 0;
+    }
+
+    // Skin schema validation
+    function isValidSkin(data) {
+      return data.keys().hasAll(['id', 'ownerUid', 'name'])
+        && data.id is string
+        && data.id.size() <= 128
+        && data.ownerUid is string
+        && data.ownerUid.size() <= 128
+        && data.ownerUid == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 128;
+    }
+
+    // Collection Rules
+
+    // 1. Users
+    match /users/{userId} {
+      allow get: if true; // Any user can read other profiles to see skins
+      allow list: if isSignedIn(); // Logged-in users can search/list users
+
+      allow create: if isOwner(userId) 
+        && isValidUser(incoming())
+        && incoming().id == userId
+        && incoming().createdAt == request.time;
+
+      allow update: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().id == existing().id
+        && incoming().username == existing().username
+        && incoming().createdAt == existing().createdAt
+        // Protect system stats unless explicitly allowed in separate actions
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'bio', 'avatarUrl', 'publicProfile'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['skinsCreated', 'totalDownloads', 'followers', 'following', 'displayName', 'bio', 'avatarUrl', 'publicProfile'])
+        );
+
+      allow delete: if false; // User accounts shouldn't be deleted via client SDK easily
+    }
+
+    // 2. Skins
+    match /skins/{skinId} {
+      allow get: if true; 
+      allow list: if true; // Public access for browsing skins
+
+      allow create: if isSignedIn()
+        && isValidSkin(incoming())
+        && incoming().id == skinId
+        && incoming().createdAt == request.time;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && isValidSkin(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt;
+
+      allow delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}
