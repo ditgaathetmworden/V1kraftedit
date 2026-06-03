@@ -46,56 +46,71 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const [isInitialized, setIsInitialized] = useState<boolean>(false)
   const { toast } = useToast()
 
+  // Load user profile
+  const loadUser = async (sessionUser: any) => {
+    const client = getSupabase()
+    if (!client) return
+
+    const u: MockUser = {
+      uid: sessionUser.id,
+      email: sessionUser.email || '',
+      displayName: sessionUser.user_metadata?.display_name || sessionUser.email?.split('@')[0] || 'User'
+    }
+    setUser(u)
+    
+    // Try fetch supabase profile
+    const { data: profile, error } = await client
+      .from('profiles')
+      .select('*')
+      .eq('id', sessionUser.id)
+      .single()
+    
+    if (!error && profile) {
+      setUserProfile({
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.display_name,
+        bio: profile.bio || '',
+        avatarUrl: profile.avatar_url,
+        skinsCreated: profile.skins_created || 0,
+        totalDownloads: profile.total_downloads || 0,
+        followers: profile.followers || 0,
+        following: profile.following || 0,
+        publicProfile: profile.public_profile ?? true,
+        createdAt: new Date(profile.created_at)
+      })
+    } else {
+      setUserProfile(null)
+    }
+  }
+
   // Initialize DB in Supabase
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    // Standard client setup helper
     const client = getSupabase()
 
     if (client) {
-      // Connect to real Supabase auth changes
+      // 1. Initial Session Check
+      client.auth.getSession().then(async ({ data: { session } }) => {
+        if (session?.user) {
+          await loadUser(session.user)
+        }
+        setLoading(false)
+        setIsInitialized(true)
+      })
+
+      // 2. Connect to real Supabase auth changes
       const { data: { subscription } } = client.auth.onAuthStateChange(
         async (event: string, session: any) => {
+          setLoading(true)
           if (session?.user) {
-            const u: MockUser = {
-              uid: session.user.id,
-              email: session.user.email || '',
-              displayName: session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || 'User'
-            }
-            setUser(u)
-            
-            // Try fetch supabase profile
-            const { data: profile, error } = await client
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single()
-            
-            if (!error && profile) {
-              setUserProfile({
-                id: profile.id,
-                username: profile.username,
-                displayName: profile.display_name,
-                bio: profile.bio || '',
-                avatarUrl: profile.avatar_url,
-                skinsCreated: profile.skins_created || 0,
-                totalDownloads: profile.total_downloads || 0,
-                followers: profile.followers || 0,
-                following: profile.following || 0,
-                publicProfile: profile.public_profile ?? true,
-                createdAt: new Date(profile.created_at)
-              })
-            } else {
-              // Should not happen if profile is created on register
-              setUserProfile(null)
-            }
+            await loadUser(session.user)
           } else {
             setUser(null)
             setUserProfile(null)
           }
           setLoading(false)
-          setIsInitialized(true)
         }
       )
 
