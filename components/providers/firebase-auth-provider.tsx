@@ -2,17 +2,36 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import type { UserProfile } from '@/types/skin'
-import { mockUsers } from '@/lib/mock-data'
 import { useToast } from '@/hooks/use-toast'
-
-export interface MockUser {
-  uid: string
-  email: string
-  displayName: string
-}
+import { auth, db } from '@/lib/firebase'
+import {
+  User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut,
+  sendPasswordResetEmail,
+  deleteUser,
+  updateProfile as updateFirebaseProfile,
+} from 'firebase/auth'
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+  increment,
+} from 'firebase/firestore'
 
 interface AuthContextType {
-  user: MockUser | null
+  user: User | null
   userProfile: UserProfile | null
   loading: boolean
   isInitialized: boolean
@@ -45,302 +64,243 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext)
 
+const userProfileDoc = (uid: string) => doc(db, 'users', uid)
+
+const mapProfile = (id: string, data: any): UserProfile => ({
+  id,
+  username: data.username || 'unknown',
+  displayName: data.displayName || data.username || 'Player',
+  bio: data.bio || '',
+  avatarUrl: data.avatarUrl || '',
+  skinsCreated: data.skinsCreated ?? 0,
+  totalDownloads: data.totalDownloads ?? 0,
+  followers: data.followers ?? 0,
+  following: data.following ?? 0,
+  publicProfile: data.publicProfile ?? true,
+  onboardingCompleted: data.onboardingCompleted ?? false,
+  createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt ? new Date(data.createdAt) : new Date(),
+})
+
+const createProfileData = (user: User, username: string): UserProfile => ({
+  id: user.uid,
+  username,
+  displayName: user.displayName || username,
+  bio: '',
+  avatarUrl: '',
+  skinsCreated: 0,
+  totalDownloads: 0,
+  followers: 0,
+  following: 0,
+  publicProfile: true,
+  onboardingCompleted: false,
+  createdAt: new Date(),
+})
+
 export function FirebaseAuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<MockUser | null>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [isInitialized, setIsInitialized] = useState<boolean>(false)
   const { toast } = useToast()
 
-  // Initialize DB in localStorage
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+  const fetchOrCreateProfile = async (authUser: User): Promise<UserProfile> => {
+    const profileRef = userProfileDoc(authUser.uid)
+    const profileSnapshot = await getDoc(profileRef)
 
-    // 1. Ensure mock users database exists in localStorage
-    const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-    let profilesList: UserProfile[] = []
-    if (!storedProfiles) {
-      profilesList = [...mockUsers]
-      localStorage.setItem('kraftedit_user_profiles', JSON.stringify(profilesList))
-    } else {
-      try {
-        profilesList = JSON.parse(storedProfiles)
-      } catch (e) {
-        profilesList = [...mockUsers]
-        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(profilesList))
-      }
+    if (profileSnapshot.exists()) {
+      return mapProfile(profileSnapshot.id, profileSnapshot.data())
     }
 
-    // 2. Load or bootstrap logged in user
-    const storedUser = localStorage.getItem('kraftedit_current_user')
-    if (storedUser) {
-      try {
-        const u = JSON.parse(storedUser) as MockUser
-        setUser(u)
-        const profile = profilesList.find((p) => p.id === u.uid)
-        if (profile) {
-          setUserProfile(profile)
-        } else {
-          // If profile is somehow missing, find fallback or make one
-          setUserProfile(profilesList[0])
-        }
-      } catch (e) {
-        bootstrapDefaultUser(profilesList)
-      }
-    } else {
-      // Auto-login to the default mock user AETHER_BLADE so the app is pre-filled and completely ready to use
-      bootstrapDefaultUser(profilesList)
-    }
-
-    setLoading(false)
-    setIsInitialized(true)
-  }, [])
-
-  const bootstrapDefaultUser = (profilesList: UserProfile[]) => {
-    const defaultProfile = profilesList[0] || mockUsers[0]
-    const defaultUser: MockUser = {
-      uid: defaultProfile.id,
-      email: `${defaultProfile.username.toLowerCase()}@kraftedit.com`,
-      displayName: defaultProfile.displayName || defaultProfile.username,
-    }
-    setUser(defaultUser)
-    setUserProfile(defaultProfile)
-    localStorage.setItem('kraftedit_current_user', JSON.stringify(defaultUser))
+    const emailPrefix = authUser.email?.split('@')[0] ?? `user-${authUser.uid}`
+    const defaultUsername = emailPrefix.replace(/[^A-Za-z0-9_]/g, '').toLowerCase() || `user${authUser.uid.slice(0, 6)}`
+    const profileData = createProfileData(authUser, defaultUsername)
+    await setDoc(profileRef, {
+      ...profileData,
+      createdAt: serverTimestamp(),
+    })
+    return profileData
   }
 
   const refreshUserProfile = async () => {
-    if (!user) return
-    const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-    if (storedProfiles) {
-      try {
-        const list = JSON.parse(storedProfiles) as UserProfile[]
-        const profile = list.find((p) => p.id === user.uid)
-        if (profile) {
-          setUserProfile(profile)
-        }
-      } catch (e) {
-        console.error('Failed to parse user profiles in refresh', e)
-      }
+    const authUser = auth.currentUser
+    if (!authUser) return
+    try {
+      const profile = await fetchOrCreateProfile(authUser)
+      setUserProfile(profile)
+    } catch (error) {
+      console.error('Unable to refresh user profile:', error)
     }
   }
 
-  // Active Login
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      setLoading(true)
+      if (authUser) {
+        setUser(authUser)
+        try {
+          const profile = await fetchOrCreateProfile(authUser)
+          setUserProfile(profile)
+        } catch (error) {
+          console.error('Failed to load user profile:', error)
+          setUserProfile(null)
+        }
+      } else {
+        setUser(null)
+        setUserProfile(null)
+      }
+      setLoading(false)
+      setIsInitialized(true)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
   const login = async (email: string, password: string) => {
     setLoading(true)
     try {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
-      
-      const formattedUsername = email.split('@')[0].toUpperCase().replace(/[^A-Z0-9_]/g, '')
-      let profile = list.find(p => p.username === formattedUsername || p.id === 'user-1')
-      if (!profile) {
-        profile = list[0] || mockUsers[0]
-      }
-
-      const activeUser: MockUser = {
-        uid: profile.id,
-        email: email,
-        displayName: profile.displayName || profile.username,
-      }
-
-      setUser(activeUser)
-      setUserProfile(profile)
-      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
-    } catch (e) {
-      console.error(e)
-      throw new Error('Inloggen is mislukt')
+      await signInWithEmailAndPassword(auth, email, password)
     } finally {
       setLoading(false)
     }
   }
 
-  // Google Login
   const loginWithGoogle = async () => {
     setLoading(true)
     try {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
-      const profile = list[0] || mockUsers[0]
-
-      const activeUser: MockUser = {
-        uid: profile.id,
-        email: 'google.explorer@kraftedit.com',
-        displayName: profile.displayName || profile.username,
-      }
-
-      setUser(activeUser)
-      setUserProfile(profile)
-      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
-    } catch (e) {
-      console.error(e)
-      throw new Error('Google Sign-In failed')
+      const provider = new GoogleAuthProvider()
+      await signInWithPopup(auth, provider)
     } finally {
       setLoading(false)
     }
   }
 
-  // Active Registration
   const register = async (username: string, email: string, password: string) => {
     setLoading(true)
     try {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      const list = storedProfiles ? JSON.parse(storedProfiles) as UserProfile[] : [...mockUsers]
-      
-      const formattedUsername = username.toUpperCase().trim()
-      
-      // Check if username already exists
-      const exists = list.some(p => p.username.toUpperCase() === formattedUsername)
-      if (exists) {
+      const formattedUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '')
+      const existingUsernameQuery = query(
+        collection(db, 'users'),
+        where('username', '==', formattedUsername)
+      )
+      const existingUsernameSnapshot = await getDocs(existingUsernameQuery)
+      if (!existingUsernameSnapshot.empty) {
         throw new Error('Username is already taken')
       }
 
-      const newId = `user-${Date.now()}`
-      const newProfile: UserProfile = {
-        id: newId,
-        username: formattedUsername,
-        displayName: username.trim(),
-        bio: 'Pixel adventurer & Kraftedit creator.',
-        avatarUrl: '',
-        skinsCreated: 0,
-        totalDownloads: 0,
-        followers: 0,
-        following: 0,
-        createdAt: new Date(),
-        onboardingCompleted: false, // Default onboarding incomplete
+      const result = await createUserWithEmailAndPassword(auth, email, password)
+      if (auth.currentUser) {
+        await updateFirebaseProfile(auth.currentUser, {
+          displayName: username,
+        })
       }
 
-      const updatedList = [...list, newProfile]
-      localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
-
-      const activeUser: MockUser = {
-        uid: newId,
-        email: email,
-        displayName: username.trim(),
-      }
-
-      setUser(activeUser)
-      setUserProfile(newProfile)
-      localStorage.setItem('kraftedit_current_user', JSON.stringify(activeUser))
-    } catch (e: unknown) {
-      console.error(e)
-      const message = e instanceof Error ? e.message : 'Registration failed'
-      throw new Error(message)
+      const profileData = createProfileData(result.user, formattedUsername)
+      await setDoc(userProfileDoc(result.user.uid), {
+        ...profileData,
+        createdAt: serverTimestamp(),
+      })
+    } catch (error: unknown) {
+      console.error('Registration failed:', error)
+      throw error instanceof Error ? error : new Error('Registration failed')
     } finally {
       setLoading(false)
     }
   }
 
-  // Active Reset Password
   const resetPassword = async (email: string) => {
     setLoading(true)
     try {
-      // Just mock successful sending
-      await new Promise(resolve => setTimeout(resolve, 800))
-    } catch (e) {
-      console.error(e)
-      throw new Error('Failed to send reset email')
+      await sendPasswordResetEmail(auth, email)
+    } catch (error) {
+      console.error('Password reset failed:', error)
+      throw error instanceof Error ? error : new Error('Failed to send reset email')
     } finally {
       setLoading(false)
     }
   }
 
-  // Active Logout
   const logout = async () => {
-    setUser(null)
-    setUserProfile(null)
-    localStorage.removeItem('kraftedit_current_user')
-  }
-
-  // Delete Account
-  const deleteAccount = async () => {
-    if (!user) return
     setLoading(true)
     try {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      if (storedProfiles) {
-        const list = JSON.parse(storedProfiles) as UserProfile[]
-        const updatedList = list.filter(p => p.id !== user.uid)
-        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
-      }
+      await signOut(auth)
       setUser(null)
       setUserProfile(null)
-      localStorage.removeItem('kraftedit_current_user')
-    } catch (e) {
-      console.error(e)
+    } catch (error) {
+      console.error('Logout failed:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  // Update Profile
-  const updateProfile = async (data: { displayName: string; bio: string; avatarUrl: string; publicProfile: boolean }) => {
-    if (!user || !userProfile) return
+  const deleteAccount = async () => {
+    if (!auth.currentUser) return
     setLoading(true)
     try {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      if (storedProfiles) {
-        const list = JSON.parse(storedProfiles) as UserProfile[]
-        const updatedList = list.map(p => {
-          if (p.id === user.uid) {
-            return {
-              ...p,
-              displayName: data.displayName,
-              bio: data.bio,
-              avatarUrl: data.avatarUrl,
-              publicProfile: data.publicProfile,
-            }
-          }
-          return p
-        })
-        localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
+      await deleteDoc(userProfileDoc(auth.currentUser.uid))
+      await deleteUser(auth.currentUser)
+      setUser(null)
+      setUserProfile(null)
+    } catch (error) {
+      console.error('Delete account failed:', error)
+      throw error instanceof Error ? error : new Error('Failed to delete account')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateProfile = async (data: { displayName: string; bio: string; avatarUrl: string; publicProfile: boolean }) => {
+    if (!auth.currentUser || !userProfile) return
+    setLoading(true)
+    try {
+      const profileRef = userProfileDoc(auth.currentUser.uid)
+      await updateDoc(profileRef, {
+        displayName: data.displayName,
+        bio: data.bio,
+        avatarUrl: data.avatarUrl,
+        publicProfile: data.publicProfile,
+      })
+
+      if (auth.currentUser.displayName !== data.displayName) {
+        await updateFirebaseProfile(auth.currentUser, { displayName: data.displayName })
       }
 
-      const updatedProfile = {
+      setUserProfile({
         ...userProfile,
         displayName: data.displayName,
         bio: data.bio,
         avatarUrl: data.avatarUrl,
         publicProfile: data.publicProfile,
-      }
-
-      setUserProfile(updatedProfile)
-
-      const updatedUserRef = {
-        ...user,
-        displayName: data.displayName,
-      }
-      setUser(updatedUserRef)
-      localStorage.setItem('kraftedit_current_user', JSON.stringify(updatedUserRef))
-      
-      toast({
-        title: 'Profile updated',
-        description: 'Your changes have been saved successfully.',
       })
-    } catch (e) {
-      console.error(e)
+    } catch (error) {
+      console.error('Profile update failed:', error)
       toast({
         variant: 'destructive',
         title: 'Update failed',
         description: 'Could not save your profile changes.',
       })
+      throw error instanceof Error ? error : new Error('Profile update failed')
     } finally {
       setLoading(false)
     }
   }
 
   const setOnboardingCompleted = async () => {
-    if (!user || !userProfile) return
-    const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-    if (storedProfiles) {
-      const list = JSON.parse(storedProfiles) as UserProfile[]
-      const updatedList = list.map(p => {
-        if (p.id === user.uid) {
-          return { ...p, onboardingCompleted: true }
-        }
-        return p
+    if (!auth.currentUser || !userProfile) return
+    setLoading(true)
+    try {
+      const profileRef = userProfileDoc(auth.currentUser.uid)
+      await updateDoc(profileRef, {
+        onboardingCompleted: true,
       })
-      localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
-      setUserProfile({ ...userProfile, onboardingCompleted: true })
+      setUserProfile({
+        ...userProfile,
+        onboardingCompleted: true,
+      })
+    } catch (error) {
+      console.error('Could not set onboarding completed:', error)
+      throw error instanceof Error ? error : new Error('Could not complete onboarding')
+    } finally {
+      setLoading(false)
     }
   }
 

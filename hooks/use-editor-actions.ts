@@ -4,6 +4,8 @@ import { SkinFormat } from '@/types/skin'
 import { createBlankSkin, downloadSkin, imageDataToDataUrl, loadSkinFromFile } from '@/lib/skin-utils'
 import { extractPalette } from '@/lib/brush-algorithms'
 import { useToast } from '@/hooks/use-toast'
+import { db } from '@/lib/firebase'
+import { doc, updateDoc, increment } from 'firebase/firestore'
 
 export function useEditorActions(
   setIsSaving: (isSaving: boolean) => void,
@@ -51,26 +53,16 @@ export function useEditorActions(
     savedSkins.push(savedSkinObj)
     localStorage.setItem('savedSkins', JSON.stringify(savedSkins))
     
-    // Increment skinsCreated in local profiles
+    // Increment skinsCreated in Firestore user profile
     if (userProfile) {
-      const storedProfiles = localStorage.getItem('kraftedit_user_profiles')
-      if (storedProfiles) {
-        try {
-          const list = JSON.parse(storedProfiles)
-          const updatedList = list.map((p: any) => {
-            if (p.id === userProfile.id) {
-              return {
-                ...p,
-                skinsCreated: (p.skinsCreated || 0) + 1
-              }
-            }
-            return p
-          })
-          localStorage.setItem('kraftedit_user_profiles', JSON.stringify(updatedList))
-          await refreshUserProfile()
-        } catch (e) {
-          console.error('Failed to update skinsCreated counter', e)
-        }
+      try {
+        const profileRef = doc(db, 'users', userProfile.id)
+        await updateDoc(profileRef, {
+          skinsCreated: increment(1),
+        })
+        await refreshUserProfile()
+      } catch (e) {
+        console.error('Failed to update skinsCreated counter', e)
       }
     }
     
