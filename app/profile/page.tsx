@@ -75,6 +75,17 @@ export default function ProfilePage() {
     )
   }
 
+  if (!userProfile) {
+    return (
+      <div className="flex h-[100dvh] items-center justify-center bg-background">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">No profile data available.</p>
+          <p className="mt-2 text-xs text-muted-foreground/70">Please sign in to continue.</p>
+        </div>
+      </div>
+    )
+  }
+
   const formatShortNum = (num: number) => {
     if (num >= 1000) return (num / 1000).toFixed(1) + 'k'
     return num.toString()
@@ -83,7 +94,7 @@ export default function ProfilePage() {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background pb-16">
       <AuthModal isOpen={!user} onClose={() => router.push('/')} />
-      {userProfile && <OnboardingModal isOpen={!userProfile.onboardingCompleted} />}
+      <OnboardingModal isOpen={!userProfile?.onboardingCompleted} />
       
       {/* Header */}
       <header className="shrink-0 border-b border-border bg-obsidian-surface/95 backdrop-blur-lg">

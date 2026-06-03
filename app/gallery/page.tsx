@@ -247,8 +247,6 @@ export default function GalleryPage() {
 
 // ─── Feed Card ────────────────────────────────────────────────────────────────
 
-import type { SkinData, Comment } from '@/types/skin'
-
 function FeedCard({ skin, comments }: { skin: SkinData; comments: Comment[] }) {
   const [liked, setLiked] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)

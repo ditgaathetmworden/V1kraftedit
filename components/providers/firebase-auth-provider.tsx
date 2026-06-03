@@ -40,6 +40,7 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfile: async () => {},
+  setOnboardingCompleted: async () => {},
 })
 
 export const useAuth = () => useContext(AuthContext)
