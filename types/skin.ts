@@ -60,6 +60,7 @@ export interface UserProfile {
   followers: number
   following: number
   publicProfile?: boolean
+  onboardingCompleted?: boolean
   createdAt: Date
 }
 
